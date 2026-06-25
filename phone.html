@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ExiledLife Rádió – Telefon Vezérlő</title>
+
+<!--
+╔═══════════════════════════════════════════════════════════════════╗
+║  ExiledLife Rádió – TELEFON VEZÉRLŐ (phone.html)                 ║
+║  Hosztolhatod ingyenesen: GitHub Pages / Vercel / Netlify         ║
+║                                                                   ║
+║  HOW TO USE:                                                      ║
+║  1. Töltsd fel a GitHub repódba                                   ║
+║  2. Kapcsold be a GitHub Pages-t (Settings → Pages → main/root)  ║
+║  3. Nyisd meg a telefonon: https://felhasznalonev.github.io/repo  ║
+║  4. Add meg a Szoba ID-t (az in-game panelről)                   ║
+║  5. Illeszd be a YouTube URL-t → Play!                            ║
+╚═══════════════════════════════════════════════════════════════════╝
+-->
+
+<!-- PubNub SDK – ugyanaz, mint a NUI-ban -->
+<script src="https://cdn.pubnub.com/sdk/javascript/pubnub.9.3.1.min.js"></script>
+
+<style>
+    /* ── RESET & BASE ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+        --bg:        #0b0e0b;
+        --surface:   #131713;
+        --surface2:  #1a1f1a;
+        --accent:    #7cc04b;
+        --accent2:   #5fa336;
+        --red:       #ef4444;
+        --red-soft:  rgba(239,68,68,0.12);
+        --yellow:    #f59e0b;
+        --text:      #e8ede6;
+        --text-dim:  rgba(232,237,230,0.5);
+        --border:    rgba(255,255,255,0.07);
+        --radius:    12px;
+        --radius-sm: 8px;
+    }
+
+    html, body {
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, 'Inter', sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+    }
+
+    /* ── LAYOUT ───────────────────────────────────────────────── */
+    .app {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 24px 16px 48px;
+        gap: 16px;
+        max-width: 480px;
+        margin: 0 auto;
+    }
+
+    /* ── HEADER ───────────────────────────────────────────────── */
+    .header {
+        width: 100%;
+        text-align: center;
+        padding-bottom: 8px;
+    }
+
+    .logo {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: var(--text);
+    }
+
+    .logo span { color: var(--accent); }
+
+    .sub-header {
+        font-size: 11px;
+        color: var(--text-dim);
+        margin-top: 2px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    /* ── CARD ─────────────────────────────────────────────────── */
+    .card {
+        width: 100%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px;
+    }
+
+    .card-title {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text-dim);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+
+    /* ── ROOM CONNECT ─────────────────────────────────────────── */
+    .room-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .room-input {
+        flex: 1;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-size: 28px;
+        font-weight: 800;
+        text-align: center;
+        padding: 12px 8px;
+        outline: none;
+        letter-spacing: 0.12em;
+        -webkit-appearance: none;
+        appearance: none;
+        transition: border-color 0.2s;
+    }
+
+    .room-input::placeholder { color: var(--text-dim); font-size: 16px; font-weight: 400; letter-spacing: 0; }
+    .room-input:focus { border-color: var(--accent); }
+
+    .connect-btn {
+        background: var(--accent);
+        border: none;
+        border-radius: var(--radius-sm);
+        color: #0b0e0b;
+        font-size: 14px;
+        font-weight: 800;
+        padding: 14px 18px;
+        cursor: pointer;
+        letter-spacing: 0.04em;
+        transition: background 0.15s, transform 0.1s;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .connect-btn:active { transform: scale(0.96); background: var(--accent2); }
+
+    /* Csatlakozás státusz */
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 99px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text-dim);
+        transition: all 0.3s;
+        margin-top: 10px;
+    }
+
+    .status-pill.connected {
+        background: rgba(124,192,75,0.12);
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+
+    .status-pill.error {
+        background: var(--red-soft);
+        border-color: var(--red);
+        color: var(--red);
+    }
+
+    .dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+    }
+
+    .dot.pulse { animation: pulse 1.2s infinite; }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.3; }
+    }
+
+    /* ── YOUTUBE INPUT ────────────────────────────────────────── */
+    .yt-input {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-size: 14px;
+        padding: 13px 14px;
+        outline: none;
+        transition: border-color 0.2s;
+        -webkit-appearance: none;
+    }
+
+    .yt-input::placeholder { color: var(--text-dim); }
+    .yt-input:focus { border-color: var(--accent); }
+
+    /* Parsed videoId kijelzés */
+    .video-preview {
+        margin-top: 10px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        display: none;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .video-preview.visible { display: flex; }
+
+    .video-thumb {
+        width: 64px; height: 36px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: var(--surface);
+    }
+
+    .video-info { flex: 1; min-width: 0; }
+
+    .video-id {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: 0.04em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .video-label {
+        font-size: 10px;
+        color: var(--text-dim);
+        margin-top: 2px;
+    }
+
+    /* ── CONTROLS ─────────────────────────────────────────────── */
+    .controls-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .ctrl-btn {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+        padding: 16px 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.15s;
+        letter-spacing: 0.04em;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .ctrl-btn .icon { font-size: 22px; }
+    .ctrl-btn .label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; color: var(--text-dim); text-transform: uppercase; }
+
+    .ctrl-btn:active { transform: scale(0.94); }
+
+    .ctrl-btn.play  { border-color: var(--accent);  background: rgba(124,192,75,0.10); }
+    .ctrl-btn.pause { border-color: var(--yellow);  background: rgba(245,158,11,0.10); }
+    .ctrl-btn.stop  { border-color: var(--red);     background: var(--red-soft); }
+
+    .ctrl-btn.play:active  { background: rgba(124,192,75,0.22); }
+    .ctrl-btn.pause:active { background: rgba(245,158,11,0.22); }
+    .ctrl-btn.stop:active  { background: rgba(239,68,68,0.22); }
+
+    /* ── VOLUME SLIDER ────────────────────────────────────────── */
+    .vol-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .vol-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text-dim);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        min-width: 28px;
+    }
+
+    .vol-slider {
+        flex: 1;
+        -webkit-appearance: none;
+        appearance: none;
+        height: 4px;
+        background: var(--border);
+        border-radius: 4px;
+        outline: none;
+        accent-color: var(--accent);
+    }
+
+    .vol-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 3px solid var(--bg);
+        box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .vol-value {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent);
+        min-width: 36px;
+        text-align: right;
+    }
+
+    /* ── SEEK BAR ─────────────────────────────────────────────── */
+    .seek-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .seek-input {
+        flex: 1;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-size: 14px;
+        padding: 10px 12px;
+        outline: none;
+        text-align: center;
+        -webkit-appearance: none;
+    }
+
+    .seek-input::placeholder { color: var(--text-dim); }
+    .seek-input:focus { border-color: var(--accent); }
+
+    .seek-btn {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 700;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .seek-btn:active { background: var(--accent); color: #0b0e0b; }
+
+    /* ── LOG (feedback) ───────────────────────────────────────── */
+    .log {
+        width: 100%;
+        font-size: 11px;
+        color: var(--text-dim);
+        text-align: center;
+        min-height: 18px;
+        transition: color 0.3s;
+    }
+
+    .log.ok  { color: var(--accent); }
+    .log.err { color: var(--red); }
+
+    /* ── FOOTER ───────────────────────────────────────────────── */
+    .footer {
+        font-size: 10px;
+        color: var(--text-dim);
+        text-align: center;
+        opacity: 0.6;
+        margin-top: 8px;
+    }
+</style>
+</head>
+<body>
+<div class="app">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="logo">EXILED<span>LIFE</span></div>
+        <div class="sub-header">🚗 Jármű Rádió – Telefon Vezérlő</div>
+    </div>
+
+    <!-- ── 1. KAPCSOLÓDÁS ────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-title">1. Szoba ID megadása</div>
+        <div class="room-row">
+            <input
+                type="number"
+                id="room-input"
+                class="room-input"
+                placeholder="pl. 4821"
+                inputmode="numeric"
+                maxlength="6"
+            >
+            <button class="connect-btn" onclick="connectRoom()">CSATLAKOZÁS</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap;">
+            <div id="status-pill" class="status-pill">
+                <div class="dot"></div>
+                <span id="status-text">Nincs csatlakozva</span>
+            </div>
+            <span id="connected-room" style="font-size:10px; color:var(--accent); display:none;"></span>
+        </div>
+    </div>
+
+    <!-- ── 2. YOUTUBE URL ────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-title">2. YouTube videó</div>
+        <input
+            type="url"
+            id="yt-url-input"
+            class="yt-input"
+            placeholder="https://www.youtube.com/watch?v=..."
+            inputmode="url"
+            oninput="parseYtUrl(this.value)"
+        >
+        <!-- Előnézet -->
+        <div id="video-preview" class="video-preview">
+            <img id="video-thumb" class="video-thumb" src="" alt="thumb">
+            <div class="video-info">
+                <div id="video-id-display" class="video-id"></div>
+                <div class="video-label">Video ID felismert ✓</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── 3. VEZÉRLŐK ───────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-title">3. Lejátszás vezérlő</div>
+        <div class="controls-grid">
+            <button class="ctrl-btn play" onclick="sendCommand('play')">
+                <span class="icon">▶</span>
+                <span class="label">Lejátszás</span>
+            </button>
+            <button class="ctrl-btn pause" onclick="sendCommand('pause')">
+                <span class="icon">⏸</span>
+                <span class="label">Szünet</span>
+            </button>
+            <button class="ctrl-btn stop" onclick="sendCommand('stop')" style="grid-column:1/-1;">
+                <span class="icon">⏹</span>
+                <span class="label">Leállítás</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ── 4. HANGERŐ ───────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-title">4. Hangerő</div>
+        <div class="vol-row">
+            <span class="vol-label">VOL</span>
+            <input
+                type="range"
+                id="vol-slider"
+                class="vol-slider"
+                min="0" max="100" value="70"
+                oninput="updateVolLabel(); sendVolume();"
+            >
+            <span id="vol-value" class="vol-value">70%</span>
+        </div>
+    </div>
+
+    <!-- ── 5. UGRÁS ─────────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-title">5. Ugrás időpontra</div>
+        <div class="seek-row">
+            <input
+                type="text"
+                id="seek-input"
+                class="seek-input"
+                placeholder="pl. 1:23  vagy  83"
+                inputmode="numeric"
+            >
+            <button class="seek-btn" onclick="sendSeek()">⏩ UGRÁS</button>
+        </div>
+    </div>
+
+    <!-- LOG sor -->
+    <div id="log" class="log">Csatlakozz egy szobához a kezdéshez.</div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+        ExiledLife FiveM RP • Telefon vezérlő<br>
+        Hosztolj GitHub Pages-en – teljesen ingyenes
+    </div>
+</div>
+
+<script>
+/* ================================================================
+   ExiledLife Rádió – phone.html  JavaScript
+   ================================================================ */
+
+/* ── KONFIGURÁCIÓ ─────────────────────────────────────────────
+   Ugyanazokat a kulcsokat másold ide, mint az ui/script.js-ben!
+   ──────────────────────────────────────────────────────────── */
+const PUBNUB_PUBLISH_KEY   = 'pub-c-XXXXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX';  // <<< CSERÉLD KI
+const PUBNUB_SUBSCRIBE_KEY = 'sub-c-XXXXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX';  // <<< CSERÉLD KI
+
+/* ── ÁLLAPOT ──────────────────────────────────────────────── */
+let pubnub       = null;
+let roomChannel  = null;     // pl. 'exiledlife_radio_4821'
+let parsedVideoId = null;
+let volTimer     = null;     // Hangerő debounce
+
+/* ── LOG SEGÉDFÜGGVÉNY ────────────────────────────────────── */
+function log(msg, type = '') {
+    const el = document.getElementById('log');
+    el.textContent = msg;
+    el.className   = 'log ' + type;
+}
+
+/* ── PUBNUB INICIALIZÁLÁS ─────────────────────────────────── */
+function connectRoom() {
+    const raw = document.getElementById('room-input').value.trim();
+    if (!raw) { log('⚠ Add meg a Szoba ID-t!', 'err'); return; }
+
+    roomChannel = 'exiledlife_radio_' + raw;
+
+    // Előző példány leállítása
+    if (pubnub) { pubnub.unsubscribeAll(); pubnub = null; }
+
+    setStatus('Csatlakozás…', false, true);
+
+    pubnub = new PubNub({
+        publishKey:   PUBNUB_PUBLISH_KEY,
+        subscribeKey: PUBNUB_SUBSCRIBE_KEY,
+        userId:       'phone-' + Math.random().toString(36).substr(2, 8)
+    });
+
+    pubnub.addListener({
+        status: function(s) {
+            if (s.category === 'PNConnectedCategory') {
+                setStatus('Csatlakozva ✓  –  Szoba: ' + raw, true, false);
+                document.getElementById('connected-room').style.display = '';
+                document.getElementById('connected-room').textContent   = '';
+                log('✓ Csatlakozva! Most nyomd meg a Play-t a játékban.', 'ok');
+            } else if (s.category === 'PNNetworkDownCategory') {
+                setStatus('Hálózati hiba', false, false, true);
+                log('⚠ Hálózati hiba – ellenőrizd az internetkapcsolatot.', 'err');
+            }
+        }
+    });
+
+    pubnub.subscribe({ channels: [roomChannel] });
+}
+
+function setStatus(text, ok, pulse, err) {
+    const pill  = document.getElementById('status-pill');
+    const span  = document.getElementById('status-text');
+    const dot   = pill.querySelector('.dot');
+    span.textContent = text;
+    pill.className   = 'status-pill' + (ok ? ' connected' : err ? ' error' : '');
+    dot.className    = 'dot' + (pulse ? ' pulse' : '');
+}
+
+/* ── YOUTUBE URL PARSZOLÁS ────────────────────────────────── */
+function extractVideoId(url) {
+    try {
+        // Normál URL: youtube.com/watch?v=XXXX
+        const u = new URL(url);
+        if (u.hostname.includes('youtube.com')) {
+            return u.searchParams.get('v');
+        }
+        // Rövidített: youtu.be/XXXX
+        if (u.hostname === 'youtu.be') {
+            return u.pathname.slice(1).split('?')[0];
+        }
+        // Embed: youtube.com/embed/XXXX
+        const embedMatch = url.match(/youtube\.com\/embed\/([A-Za-z0-9_-]{11})/);
+        if (embedMatch) return embedMatch[1];
+    } catch (e) {}
+
+    // Fallback: egyszerű regex
+    const m = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+}
+
+function parseYtUrl(value) {
+    const vid = extractVideoId(value);
+    const preview = document.getElementById('video-preview');
+
+    if (vid) {
+        parsedVideoId = vid;
+        document.getElementById('video-id-display').textContent = vid;
+        document.getElementById('video-thumb').src = 'https://img.youtube.com/vi/' + vid + '/mqdefault.jpg';
+        preview.classList.add('visible');
+    } else {
+        parsedVideoId = null;
+        preview.classList.remove('visible');
+    }
+}
+
+/* ── ÜZENET KÜLDÉS ────────────────────────────────────────── */
+function publish(payload) {
+    if (!pubnub || !roomChannel) {
+        log('⚠ Előbb csatlakozz egy szobához!', 'err');
+        return false;
+    }
+    pubnub.publish({ channel: roomChannel, message: payload },
+        function(status) {
+            if (status.error) {
+                log('❌ Küldési hiba: ' + status.errorData, 'err');
+            }
+        }
+    );
+    return true;
+}
+
+function sendCommand(action) {
+    if (action === 'play' && !parsedVideoId) {
+        log('⚠ Először adj meg egy YouTube URL-t!', 'err');
+        return;
+    }
+
+    const payload = { action };
+    if (action === 'play' && parsedVideoId) payload.videoId = parsedVideoId;
+
+    if (publish(payload)) {
+        const labels = { play: '▶ Lejátszás elküldve', pause: '⏸ Szünet elküldve', stop: '⏹ Leállítás elküldve' };
+        log(labels[action] || 'Parancs elküldve', 'ok');
+    }
+}
+
+/* ── HANGERŐ (debounce 300ms) ─────────────────────────────── */
+function updateVolLabel() {
+    const v = document.getElementById('vol-slider').value;
+    document.getElementById('vol-value').textContent = v + '%';
+}
+
+function sendVolume() {
+    clearTimeout(volTimer);
+    volTimer = setTimeout(function() {
+        const v = parseInt(document.getElementById('vol-slider').value) / 100;
+        if (publish({ action: 'volume', volume: v })) {
+            log('🔊 Hangerő: ' + Math.round(v * 100) + '%', 'ok');
+        }
+    }, 300);
+}
+
+/* ── SEEK (idő parszolás) ─────────────────────────────────── */
+function parseSeekTime(raw) {
+    raw = raw.trim();
+    // "1:23" formátum
+    if (raw.includes(':')) {
+        const parts = raw.split(':').map(Number);
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    // Sima szám (másodpercek)
+    const n = parseFloat(raw);
+    return isNaN(n) ? null : n;
+}
+
+function sendSeek() {
+    const raw  = document.getElementById('seek-input').value;
+    const secs = parseSeekTime(raw);
+    if (secs === null) { log('⚠ Hibás időpont formátum! Pl.: 1:23 vagy 83', 'err'); return; }
+
+    if (publish({ action: 'seek', seekTime: secs })) {
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        log('⏩ Ugrás: ' + m + ':' + String(s).padStart(2,'0'), 'ok');
+    }
+}
+
+/* ── ENTER GOMB TÁMOGATÁS ─────────────────────────────────── */
+document.getElementById('room-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') connectRoom();
+});
+
+document.getElementById('seek-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendSeek();
+});
+
+/* ── KEZDETI ÁLLAPOT ──────────────────────────────────────── */
+updateVolLabel();
+</script>
+</body>
+</html>
